@@ -1,0 +1,22 @@
+# The guard's on-chain check. A crate of its own, outside the bot's
+# workspace: it has no dependency and is built for the chain with `cargo build-sbf`; its tests
+# run natively with `cargo test --manifest-path programs/any-of/Cargo.toml` from the repository root.
+[package]
+name = "any-of"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = true
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
+[workspace]
