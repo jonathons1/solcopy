@@ -1,22 +1,32 @@
 # solcopy
 
-A copy-trading system for pump.fun on Solana, written in Rust. It follows a small set of public
-trader wallets and buys a coin directly **behind** a trader's own buy, never ahead of it.
+A trading system for pump.fun on Solana, written in Rust, trading its owner's own funds. It
+follows a small set of public wallets and places one buy directly **behind** a transaction that
+is already on the chain: a trader's buy of a coin, or a launcher's creation of one.
 
 This repository is the public face of a private codebase. It holds a description of the system
 and the source of its one on-chain program. The trading engine itself is not published.
 
 ## What it does
 
-When a followed trader buys a newly launched coin, other buyers follow within the same block.
-The system's job is to be the first of them: its buy must execute right behind the trader's.
-It then sells on a fixed rule. It does nothing else: no sandwiching, no front-running, no
-trading against the trader.
+It runs two strategies, each a single buy behind a trigger that has already executed, followed
+by a sale on a fixed rule.
 
-That last point is enforced on-chain, not by policy. Every buy the system sends carries a check
-that fails unless a followed trader **already holds** the coin. A copy that reaches a leader
-before the trader's buy has executed fails at that check, before any swap. The system cannot
-buy ahead of the transaction it follows.
+- **Behind a trader.** When a followed trader buys a newly launched coin, other buyers follow
+  within the same block. The system's job is to be the first of them: its buy must execute
+  right behind the trader's.
+- **Behind a launch.** When one of a small set of public launcher wallets creates a coin, the
+  system buys once, right behind the creation, and sells within seconds on a fixed rule.
+
+It does nothing else. It never sees or acts on a pending transaction, so it cannot sandwich or
+front-run one.
+
+For the first strategy that is enforced on-chain, not by policy. Every copy sent behind a trader
+carries a check that fails unless a followed trader **already holds** the coin. A copy that
+reaches a leader before the trader's buy has executed fails at that check, before any swap. The
+system cannot buy ahead of the transaction it copies. A buy behind a launch carries a price
+limit and a slot ceiling instead: it executes close to the launch price, in the next few
+blocks, or not at all.
 
 ## How it is built
 
@@ -42,10 +52,27 @@ buy ahead of the transaction it follows.
 - **Everything is recorded.** Every feed message goes to disk with the time it arrived, and
   every decision is journaled with its timings, so any trade can be replayed and explained.
 
+## How it uses bundles
+
+- **Single-transaction bundles only:** one buy, or one sale of a whole position.
+- **Only on a trigger already on the chain:** the creation of a coin, or a followed wallet's
+  buy that has landed. Nothing is built on a pending transaction.
+- **No waiting copies through a bundle service.** The guarded copies described above, which
+  wait at a leader and cancel themselves when no trader buys, go as ordinary transactions
+  through ordinary sending services, never through a block engine's bundle entry.
+- **Every bundled buy carries a price limit and a slot ceiling,** so it is either worth
+  executing or it is dropped.
+- **One bundle a trade.** A buy's copies are signed on one durable nonce, so only one of them
+  can execute and the others cannot land and fail.
+- **Volume:** under 100 bundles a day at pilot size.
+- **Bid:** the priority fee on Harmonic's blocks, a tip on Jito's.
+- **Each bundle's fate is journaled by route,** so the landed rate of a route is known, and a
+  route whose bundles do not land can be switched off.
+
 ## Where it stands
 
-Live on mainnet since 29 October 2026 at test size (0.05 SOL a trade), run by hand in short
-sessions and measured after each. It is an engineering and measurement project, not yet a
+Live on mainnet since 29 October 2026 at test size (0.05 SOL a trade), the buys behind a launch
+since 20 November 2026, run by hand in short sessions and measured after each. It is an engineering and measurement project, not yet a
 profitable one, and nothing here claims otherwise.
 
 What has been measured so far:
@@ -68,6 +95,9 @@ follows, its copies are bounded in time, and its limits fail closed.
 
 What would run on the network: one backrun buy behind a followed wallet's pump.fun buy, bid
 from the measured value of that place, at small size during the pilot.
+
+Through Harmonic's bundle service the same holds as in "How it uses bundles" above: single
+buys and sales expected to execute, on Harmonic-led slots, and no waiting copies.
 
 ## Repository layout
 
